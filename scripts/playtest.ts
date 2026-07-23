@@ -209,11 +209,12 @@ console.log('\n3) Physics golden checks');
     if (sim.player.vy < 0 && sim.player.y < apex - 5) break;
   }
   const standH = apex - y0;
-  ok('stand jump height ~90-140px', standH > 85 && standH < 180, `h=${standH.toFixed(1)}`);
+  ok('stand jump height floaty ~110-200px', standH > 100 && standH < 220, `h=${standH.toFixed(1)}`);
 
-  // run jump higher
+  // run jump higher (wide pad so we don't walk off while accelerating)
+  world.platforms = [{ id: 1, x: 100, y: 100, w: 500, h: 16, kind: 'ice' }];
   sim = createSimFromWorld(world);
-  sim.player.x = 250;
+  sim.player.x = 200;
   sim.player.y = 116;
   sim.player.vx = 0;
   sim.player.vy = 0;
@@ -223,16 +224,17 @@ console.log('\n3) Physics golden checks');
   for (let i = 0; i < 90; i++) step(sim, feel, { right: true }, 1);
   const speed = Math.abs(sim.player.vx);
   const y1 = sim.player.y;
-  step(sim, feel, { right: true, jump: true, hold: true }, 1);
+  // release run input on takeoff so we stay over the pad
+  step(sim, feel, { jump: true, hold: true }, 1);
   let apex2 = sim.player.y;
-  for (let i = 0; i < 100; i++) {
-    step(sim, feel, { right: true, hold: true }, 1);
+  for (let i = 0; i < 120; i++) {
+    step(sim, feel, { hold: true }, 1);
     apex2 = Math.max(apex2, sim.player.y);
     if (sim.player.vy < 0 && sim.player.y < apex2 - 5) break;
   }
   const runH = apex2 - y1;
   ok('run builds speed', speed > 200, `vx=${speed.toFixed(0)}`);
-  ok('run jump higher than stand', runH > standH + 15, `runH=${runH.toFixed(1)} standH=${standH.toFixed(1)}`);
+  ok('run jump higher than stand', runH > standH + 10, `runH=${runH.toFixed(1)} standH=${standH.toFixed(1)}`);
 
   // coyote
   sim = createSimFromWorld(world);

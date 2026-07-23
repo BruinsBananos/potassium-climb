@@ -221,14 +221,14 @@ function applyGradeGameplay(
       style = L.style_perfect;
       vxMul = L.land_vx_mul_perfect;
       ban = L.ban_crumb_perfect;
-      hitstop = 2;
+      hitstop = 1; // was 2 — keep juice without blocking instant re-jump
       queueSfx(sim, 'land_perfect');
       break;
     case 'great':
       dCombo = L.combo_great;
       style = L.style_great;
       vxMul = L.land_vx_mul_great;
-      hitstop = 1;
+      hitstop = 0;
       queueSfx(sim, 'land_great');
       break;
     case 'ok':
@@ -527,12 +527,12 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
 
   if (input.jumpDown) p.bufferLeft = J.jump_buffer_ms / 1000;
 
+  // Wall jump only here (before integrate). Ground jumps run AFTER land so you can
+  // re-jump the same frame you touch a pad (unlimited bounce as soon as you land).
   const wallJumpValid =
     (p.onWall && p.clingLeft > 0) || (!p.onWall && p.wallGraceLeft > 0 && p.wallDir !== 0);
-  if (p.bufferLeft > 0) {
-    if (wallJumpValid && tryJump(sim, feel, true)) {
-      /* */
-    } else tryJump(sim, feel, false);
+  if (p.bufferLeft > 0 && wallJumpValid) {
+    tryJump(sim, feel, true);
   }
 
   const wish = wishX(input);
@@ -616,11 +616,11 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     }
   }
 
+  let justLanded = false;
   {
     const feet = feetBox(p, feel);
     const plat = findLandPlatform(sim, feel, prevBottom, feet);
     // Only land when falling/resting (vy<=0) or staying grounded — never while rising
-    // (old vy<=80 snapped short hops back onto the same pad).
     if (plat && (p.vy <= 0 || wasGrounded)) {
       const top = plat.y + plat.h;
       const surface = plat.kind as Surface;
@@ -635,25 +635,29 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
       p.coyoteLeft = 0;
       p.jumpHoldActive = false;
       if (firstContact) {
+        justLanded = true;
         const edge = clamp(Math.abs(p.x - (plat.x + plat.w / 2)) / (plat.w / 2), 0, 1);
         const grade = computeGrade(feel, impactVy, edge, surface);
         sim.lastLand = { grade, impact: impactVy, edge, surface };
         sim.landFlash = true;
         applyGradeGameplay(sim, feel, grade, surface);
+        // Keep land hitstop tiny so re-jump never feels gated
+        if (sim.hitstopFrames > 1) sim.hitstopFrames = 1;
         if (plat.kind === 'crumble' && plat.crumbleArmedAt == null) {
           plat.crumbleArmedAt = sim.elapsed;
           queueSfx(sim, 'land_scuff');
         }
         if (plat.kind === 'spring') {
-          p.vy = feel.spring.spring_vy;
+          p.vy = feel.spring.spring_vy * 0.92; // slightly softer spring to match floaty gravity
           p.vx *= feel.spring.spring_vx_keep;
           p.onGround = false;
           p.surface = null;
           p.platformId = null;
           p.jumpHoldActive = feel.spring.spring_allow_hold;
           p.jumpHoldTime = 0;
-          sim.hitstopFrames = Math.max(sim.hitstopFrames, 2);
+          sim.hitstopFrames = Math.max(sim.hitstopFrames, 1);
           queueSfx(sim, 'spring');
+          justLanded = false; // spring already launches
         }
       }
     } else if (wasGrounded) {
@@ -662,6 +666,14 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
       p.platformId = null;
       p.coyoteLeft = J.coyote_ms / 1000;
     }
+  }
+
+  // Ground jump after landing: buffer, fresh press, or hold-through for instant re-jump
+  if (p.onGround && (p.bufferLeft > 0 || input.jumpDown || (justLanded && input.jumpHeld))) {
+    if (justLanded && input.jumpHeld) {
+      p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
+    }
+    tryJump(sim, feel, false);
   }
 
   // movers + crumble

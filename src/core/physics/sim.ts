@@ -286,25 +286,65 @@ function playerState(sim: SimState): string {
   return 'air';
 }
 
-/** If feet rest on a pad and not rising, force grounded truth before jump attempts (H2). */
+/**
+ * Resting contact (not sweep-land). True when feet sit on a solid pad top.
+ * More forgiving than land sweep — used so platform jump is never "random".
+ * Y-up: p.y is feet; pad top = plat.y + plat.h.
+ */
+function findRestingPlatform(sim: SimState, feel: FeelParams): Platform | null {
+  const p = sim.player;
+  // Hard rising from a jump — not resting
+  if (p.vy > 140) return null;
+  const feet = feetBox(p, feel);
+  const slop = feel.body.land_y_slop + 8;
+  let best: Platform | null = null;
+  let bestTop = -Infinity;
+  for (const plat of sim.platforms) {
+    if (plat.kind === 'spike' || plat.gone) continue;
+    const top = plat.y + plat.h;
+    // Must be near the top surface (slightly above, on, or slightly through)
+    if (p.y > top + slop) continue;
+    if (p.y < top - slop * 2) continue;
+    // Generous horizontal overlap for jump eligibility (half of land min)
+    const overlap = horizontalOverlapRatio(feet, plat);
+    if (overlap < Math.min(0.15, feel.body.min_land_overlap * 0.45)) continue;
+    if (top >= bestTop) {
+      bestTop = top;
+      best = plat;
+    }
+  }
+  return best;
+}
+
+/** If feet rest on a pad and not rising hard, force grounded truth before jump attempts. */
 function syncGroundedFromFeet(sim: SimState, feel: FeelParams): void {
   const p = sim.player;
-  if (p.vy > 0) return; // rising — do not snap
-  const feet = feetBox(p, feel);
-  const plat = findLandPlatform(sim, feel, p.y + 2, feet);
+  if (p.vy > 140) return; // rising — do not snap
+  const plat = findRestingPlatform(sim, feel);
   if (!plat) return;
   const top = plat.y + plat.h;
-  if (Math.abs(p.y - top) > feel.body.land_y_slop + 2) return;
   p.y = top;
   p.vy = 0;
   p.onGround = true;
   p.surface = plat.kind as Surface;
   p.platformId = plat.id;
   p.onWall = false;
+  p.coyoteLeft = 0;
+}
+
+/** Can start a ground/coyote jump right now? */
+function canGroundJump(sim: SimState, feel: FeelParams): boolean {
+  const p = sim.player;
+  if (p.onGround) return true;
+  if (p.coyoteLeft > 0) return true;
+  // Feet on pad even if flag desynced (and not launching)
+  if (p.vy <= 140 && findRestingPlatform(sim, feel)) return true;
+  return false;
 }
 
 /**
  * Single jump authority. Returns whether jump started.
+ * No cooldown — if canGroundJump / wall valid, always jumps.
  */
 function tryJump(
   sim: SimState,
@@ -367,18 +407,25 @@ function tryJump(
     return log(true, 'none', 'wall');
   }
 
-  // Already rising from a jump this contact — not a miss, just no double-jump
-  if (!p.onGround && p.coyoteLeft <= 0 && p.vy > 50 && p.jumpHoldActive) {
-    return log(false, 'already_airborne');
+  // Snap to pad if feet are there — jump must work on platform always
+  if (!p.onGround) {
+    const rest = findRestingPlatform(sim, feel);
+    if (rest && p.vy <= 140) {
+      const top = rest.y + rest.h;
+      p.y = top;
+      p.vy = 0;
+      p.onGround = true;
+      p.surface = rest.kind as Surface;
+      p.platformId = rest.id;
+      p.onWall = false;
+      p.coyoteLeft = 0;
+    }
   }
 
-  if (!p.onGround && p.coyoteLeft <= 0) {
-    return log(false, p.coyoteLeft <= 0 && !p.onGround ? 'not_grounded' : 'no_coyote');
-  }
-  if (!p.onGround && p.coyoteLeft > 0) {
-    // coyote ok
-  } else if (!p.onGround) {
-    return log(false, 'no_coyote');
+  // Mid-air with no surface / coyote: arm buffer only, no double-jump
+  if (!canGroundJump(sim, feel)) {
+    if (p.vy > 50) return log(false, 'already_airborne');
+    return log(false, 'not_grounded');
   }
 
   const carry = clamp(Math.abs(p.vx) / feel.horizontal.max_run_speed, 0, 1.25);
@@ -396,6 +443,8 @@ function tryJump(
   p.bufferLeft = 0;
   p.jumpHoldActive = true;
   p.jumpHoldTime = 0;
+  // Clear any residual hitstop so launch is never delayed
+  sim.hitstopFrames = 0;
   queueSfx(sim, 'jump');
   return log(true, 'none', 'ground');
 }
@@ -571,21 +620,32 @@ function hazardCheck(sim: SimState, feel: FeelParams): void {
   }
 }
 
-export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: number): void {
-  if (sim.dead || sim.summit) return;
+/**
+ * Advance one physics step.
+ * @returns true if a jump (ground or wall) started this step.
+ */
+export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: number): boolean {
+  if (sim.dead || sim.summit) return false;
 
   const p = sim.player;
   const H = feel.horizontal;
   const J = feel.jump;
+  let jumped = false;
 
   jumpDebugTick();
 
-  // Always accept jump presses (even during hitstop) so taps are never dropped
+  // Always accept jump presses (even during hitstop) so taps are never dropped.
+  // No jump cooldown — buffer only helps early presses, never blocks grounded jumps.
   if (input.jumpDown) p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
 
   if (sim.hitstopFrames > 0) {
     sim.hitstopFrames -= 1;
-    // Buffer stays armed; do not attempt while frozen (H3)
+    // Still try to jump out of hitstop if grounded — never freeze platform jumps
+    syncGroundedFromFeet(sim, feel);
+    if ((p.bufferLeft > 0 || input.jumpDown) && canGroundJump(sim, feel)) {
+      jumped = tryJump(sim, feel, false, input) || jumped;
+      if (jumped) return true;
+    }
     if (isJumpDebugEnabled()) {
       jumpDebugPush({
         kind: 'step',
@@ -599,7 +659,7 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
         note: 'hitstop',
       });
     }
-    return;
+    return false;
   }
 
   const speedMul = p.speedLeft > 0 ? 1.35 : 1;
@@ -619,16 +679,19 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     if (sim.comboTimer <= 0) sim.combo = 0;
   }
 
-  // H2: if feet rest on pad and not rising, force grounded truth before jump attempts
+  // Force grounded truth from feet before any jump attempt
   syncGroundedFromFeet(sim, feel);
 
-  // Jump EARLY while grounded/coyote/wall — before movement so platform presses feel instant.
-  // Order (E.3): arm buffer → attempt → move → land → attempt again → tick buffer
+  // Jump EARLY — platform jump is always available when feet on pad / coyote / wall.
+  // Order: arm buffer → attempt → move → land → attempt again → tick buffer
   const wallJumpValid =
     (p.onWall && p.clingLeft > 0) || (!p.onWall && p.wallGraceLeft > 0 && p.wallDir !== 0);
   if (p.bufferLeft > 0 || input.jumpDown) {
-    if (wallJumpValid) tryJump(sim, feel, true, input);
-    else if (p.onGround || p.coyoteLeft > 0) tryJump(sim, feel, false, input);
+    if (wallJumpValid) {
+      jumped = tryJump(sim, feel, true, input) || jumped;
+    } else if (canGroundJump(sim, feel)) {
+      jumped = tryJump(sim, feel, false, input) || jumped;
+    }
   }
 
   const wish = wishX(input);
@@ -715,8 +778,12 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
   let justLanded = false;
   {
     const feet = feetBox(p, feel);
-    const plat = findLandPlatform(sim, feel, prevBottom, feet);
-    // Only land when falling/resting (vy<=0) or staying grounded — never while rising
+    // Sweep land first; if that misses while resting/falling, use resting contact
+    // so platform standing never flickers off (that made jumps feel random).
+    let plat = findLandPlatform(sim, feel, prevBottom, feet);
+    if (!plat && p.vy <= 0) plat = findRestingPlatform(sim, feel);
+    // ONLY land when falling/resting (vy<=0) or already grounded this step.
+    // Never re-land while rising — that cancelled jumps and felt like random fails.
     if (plat && (p.vy <= 0 || wasGrounded)) {
       const top = plat.y + plat.h;
       const surface = plat.kind as Surface;
@@ -756,19 +823,31 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
         }
       }
     } else if (wasGrounded) {
-      p.onGround = false;
-      p.surface = null;
-      p.platformId = null;
-      p.coyoteLeft = J.coyote_ms / 1000;
+      // Leave pad — but if feet still on a pad (flag flicker), re-stick instead of coyote
+      const rest = findRestingPlatform(sim, feel);
+      if (rest && p.vy <= 0) {
+        const top = rest.y + rest.h;
+        p.y = top;
+        p.vy = 0;
+        p.onGround = true;
+        p.surface = rest.kind as Surface;
+        p.platformId = rest.id;
+      } else {
+        p.onGround = false;
+        p.surface = null;
+        p.platformId = null;
+        p.coyoteLeft = J.coyote_ms / 1000;
+      }
     }
   }
 
   // Same-frame re-jump after landing (bunny-hop / buffered land / hold-through land C5)
+  // Platform rule: the moment you land, jump is available again (no cooldown).
   if (p.onGround && (p.bufferLeft > 0 || input.jumpDown || (justLanded && input.jumpHeld))) {
     if (justLanded && input.jumpHeld) {
       p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
     }
-    tryJump(sim, feel, false, input);
+    jumped = tryJump(sim, feel, false, input) || jumped;
   }
 
   // H5: Tick jump buffer AFTER all attempts so a press the same frame always gets a try
@@ -873,6 +952,7 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     p.vy = 0;
     queueSfx(sim, 'summit');
   }
+  return jumped;
 }
 
 export function drainSfx(sim: SimState): string[] {

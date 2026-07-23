@@ -348,26 +348,33 @@ function test_no_double_jump_air(): void {
 
 // ─── C7 / H3 hitstop still buffers ───────────────────────────────
 function test_jump_during_hitstop_still_buffers(): void {
-  console.log('\n[H3/C7] Jump during hitstop arms buffer');
+  console.log('\n[H3/C7] Jump during hitstop (grounded = instant, air = buffer)');
   const feel = createFeelParams();
+
+  // Grounded during hitstop: jump must fire immediately (no freeze on platform)
   const sim = createSimFromWorld(makePadWorld('block'));
   settleOnPad(sim, feel);
   sim.hitstopFrames = 5;
   jumpDebugReset();
-
-  stepSim(sim, feel, { left: false, right: false, jumpDown: true, jumpHeld: true }, DT);
-  ok('H3 still in hitstop or buffered', sim.player.bufferLeft > 0, `buf=${(sim.player.bufferLeft * 1000).toFixed(0)}`);
-  ok('H3 no jump while hitstop if frames remain', sim.hitstopFrames >= 0);
-
-  // Drain hitstop
-  for (let i = 0; i < 10; i++) {
-    stepSim(sim, feel, { left: false, right: false, jumpDown: false, jumpHeld: true }, DT);
-    if (!sim.player.onGround && sim.player.vy > feel.jump.jump_speed_base * 0.5) break;
-  }
+  const did = stepSim(sim, feel, { left: false, right: false, jumpDown: true, jumpHeld: true }, DT);
   ok(
-    'H3 jump after hitstop from buffer',
-    !sim.player.onGround && sim.player.vy > feel.jump.jump_speed_base * 0.5,
-    `vy=${sim.player.vy.toFixed(1)} onG=${sim.player.onGround}`,
+    'H3 grounded jump during hitstop',
+    did && !sim.player.onGround && sim.player.vy > feel.jump.jump_speed_base * 0.5,
+    `did=${did} vy=${sim.player.vy.toFixed(1)}`,
+  );
+
+  // Airborne during hitstop: press must still arm buffer for land
+  const sim2 = createSimFromWorld(makePadWorld('block'));
+  settleOnPad(sim2, feel);
+  stepSim(sim2, feel, { left: false, right: false, jumpDown: true, jumpHeld: true }, DT);
+  for (let i = 0; i < 10; i++) stepSim(sim2, feel, emptyInput(), DT);
+  sim2.hitstopFrames = 5;
+  sim2.player.bufferLeft = 0;
+  stepSim(sim2, feel, { left: false, right: false, jumpDown: true, jumpHeld: false }, DT);
+  ok(
+    'H3 air press during hitstop arms buffer',
+    sim2.player.bufferLeft > 0,
+    `buf=${(sim2.player.bufferLeft * 1000).toFixed(0)}`,
   );
 }
 
@@ -405,6 +412,47 @@ function test_H2_onGround_desync_recover(): void {
   );
 }
 
+/** Every grounded press must jump — no random misses (user report). */
+function test_every_grounded_press_jumps(): void {
+  console.log('\n[PLATFORM] Every grounded press jumps (no cooldown)');
+  const feel = createFeelParams();
+  const sim = createSimFromWorld(makePadWorld('ice'));
+  settleOnPad(sim, feel);
+
+  let presses = 0;
+  let takeoffs = 0;
+  let prevG = sim.player.onGround;
+  // 20 hop cycles: press only when grounded
+  for (let cycle = 0; cycle < 20; cycle++) {
+    // wait grounded
+    for (let i = 0; i < 400 && !sim.player.onGround; i++) {
+      stepSim(sim, feel, emptyInput(), DT);
+    }
+    if (!sim.player.onGround) {
+      ok(`PLATFORM cycle ${cycle} grounded`, false, 'never landed');
+      return;
+    }
+    // force desync sometimes to prove recover
+    if (cycle % 3 === 0) {
+      sim.player.onGround = false;
+      sim.player.platformId = null;
+      sim.player.vy = 0;
+    }
+    prevG = sim.player.onGround || true;
+    presses += 1;
+    const did = stepSim(sim, feel, { left: false, right: false, jumpDown: true, jumpHeld: true }, DT);
+    if (did || (!sim.player.onGround && sim.player.vy > feel.jump.jump_speed_base * 0.5)) {
+      takeoffs += 1;
+    }
+    // release and fall
+    for (let i = 0; i < 8; i++) stepSim(sim, feel, emptyInput(), DT);
+    for (let i = 0; i < 400 && !sim.player.onGround; i++) {
+      stepSim(sim, feel, emptyInput(), DT);
+    }
+  }
+  ok('PLATFORM 20/20 grounded presses jump', takeoffs === 20, `takeoffs=${takeoffs}/20 presses=${presses}`);
+}
+
 function main(): void {
   console.log('=== Jump Reliability Suite ===');
   test_instrumentation_ring();
@@ -417,6 +465,7 @@ function main(): void {
   test_jump_during_hitstop_still_buffers();
   test_H5_buffer_not_eaten_before_attempt();
   test_H2_onGround_desync_recover();
+  test_every_grounded_press_jumps();
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
   if (failed > 0) process.exit(1);

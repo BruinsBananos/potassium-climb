@@ -830,26 +830,41 @@ async function main(): Promise<void> {
     if (!paused && !sim.dead && !sim.summit) {
       accum += frameDt;
       let steps = 0;
-      // Keep jump latched across all substeps; sim arms a 200ms buffer so late frames still jump
-      const wantJump = snap.jumpPressed;
+      // Sticky jump latch: keep feeding jumpDown until the sim actually jumps OR
+      // the press is absorbed into the land buffer. Never drop a grounded press.
+      // After a successful jump this frame, stop re-arming buffer on later substeps
+      // (same keydown must not re-queue a second hop mid-air).
+      let wantJump = snap.jumpPressed;
+      let jumpedThisFrame = false;
       while (accum >= FIXED_DT && steps < feel.world.max_physics_steps_per_frame) {
         prevX = sim.player.x;
         prevY = sim.player.y;
-        stepSim(
+        const didJump = stepSim(
           sim,
           feel,
           {
             left: snap.left,
             right: snap.right,
-            jumpDown: wantJump,
-            jumpHeld: snap.jumpHeld || wantJump,
+            jumpDown: wantJump && !jumpedThisFrame,
+            jumpHeld: snap.jumpHeld || (wantJump && !jumpedThisFrame),
           },
           FIXED_DT,
         );
+        if (didJump) {
+          jumpedThisFrame = true;
+          wantJump = false;
+        }
         accum -= FIXED_DT;
         steps += 1;
       }
-      if (wantJump) input.consumeJump();
+      // Consume latch only when jump fired or buffer owns the request.
+      // If still grounded with no buffer, KEEP the latch and retry next frame.
+      if (snap.jumpPressed) {
+        if (jumpedThisFrame || sim.player.bufferLeft > 0) {
+          input.consumeJump();
+        }
+        // else: still standing, jump didn't fire — hold latch until it does
+      }
       if (steps === feel.world.max_physics_steps_per_frame) accum = 0;
     } else {
       // Still queue jumps while paused? No — but don't lose edge across pause: keep latch

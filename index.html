@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Potassium Climb</title>
+    <link rel="stylesheet" href="/src/styles/app.css" />
+  </head>
+  <body>
+    <div id="app" aria-hidden="true"></div>
+
+    <!-- Boot -->
+    <div id="screen-boot" class="screen">
+      <div class="boot-inner">
+        <div class="logo-mark">🍌❄</div>
+        <h1>Potassium Climb</h1>
+        <p class="sub">Elegant ice. Maximum height.</p>
+        <div class="bar"><div id="boot-bar"></div></div>
+        <p id="boot-tip" class="muted">Slide first. Jump second. Potassium forever.</p>
+      </div>
+    </div>
+
+    <!-- Hub -->
+    <div id="screen-hub" class="screen hidden" role="main">
+      <header class="hub-top">
+        <h1 class="wordmark">Potassium Climb</h1>
+        <div class="hub-actions">
+          <button type="button" class="icon-btn" id="btn-howto" aria-label="How to play">?</button>
+          <button type="button" class="icon-btn" id="btn-settings" aria-label="Settings">⚙</button>
+        </div>
+      </header>
+      <div class="pride panel">
+        <div>Bank <strong id="hub-ban">🍌 0</strong></div>
+        <div>Best <strong id="hub-best">⬆ 0m · ★ 0</strong></div>
+      </div>
+      <div class="hero-card panel">
+        <div class="hero-art" id="hub-art"></div>
+        <p class="tagline" id="hub-tagline">Frost Grove — gentle ice, wide ledges. Learn the slide.</p>
+      </div>
+      <button type="button" class="btn primary" id="btn-play">Worlds</button>
+      <div class="row">
+        <button type="button" class="btn secondary" id="btn-daily">Daily</button>
+        <button type="button" class="btn secondary" id="btn-weekly">Weekly</button>
+      </div>
+      <div class="row">
+        <button type="button" class="btn secondary" id="btn-upgrades">Upgrades</button>
+        <button type="button" class="btn secondary" id="btn-cosmetics">Looks</button>
+      </div>
+      <div class="row">
+        <button type="button" class="btn secondary" id="btn-lb">Leaderboard</button>
+        <button type="button" class="btn secondary" id="btn-lab">Practice Lab</button>
+      </div>
+      <p class="muted center tiny">No wallet. No pay-to-win. Pure height.</p>
+    </div>
+
+    <!-- Worlds -->
+    <div id="screen-worlds" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-worlds-back">← Back</button>
+        <span>Worlds</span>
+      </header>
+      <div id="world-list"></div>
+    </div>
+
+    <!-- Challenges detail -->
+    <div id="screen-challenges" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-ch-back">← Back</button>
+        <span id="ch-title">Challenge</span>
+      </header>
+      <div class="panel" id="ch-body"></div>
+      <button type="button" class="btn primary" id="btn-ch-play">Play</button>
+    </div>
+
+    <!-- Leaderboard -->
+    <div id="screen-lb" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-lb-back">← Back</button>
+        <span>Leaderboard</span>
+      </header>
+      <div class="row tabs" id="lb-tabs">
+        <button type="button" class="btn secondary" data-lb="height">Height</button>
+        <button type="button" class="btn secondary" data-lb="daily">Daily</button>
+        <button type="button" class="btn secondary" data-lb="weekly">Weekly</button>
+      </div>
+      <div id="lb-list" class="panel"></div>
+      <h3 class="tiny muted" style="margin-top:12px">Per-biome bests</h3>
+      <div id="lb-biome" class="panel"></div>
+    </div>
+
+    <!-- Cosmetics -->
+    <div id="screen-cosmetics" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-cos-back">← Back</button>
+        <span>Looks</span>
+      </header>
+      <p class="muted tiny">Tint stubs — equip for pride. No power.</p>
+      <div id="cos-list"></div>
+    </div>
+
+    <!-- Lab -->
+    <div id="screen-lab" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-lab-back">← Back</button>
+        <span>Practice Lab</span>
+      </header>
+      <p class="muted tiny">No BAN bank. No leaderboard. Train freely on unlocked biomes.</p>
+      <div id="lab-list"></div>
+    </div>
+
+    <!-- Upgrades -->
+    <div id="screen-upgrades" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-up-back">← Back</button>
+        <span id="up-ban">🍌 0</span>
+      </header>
+      <h2>Upgrades</h2>
+      <p class="muted tiny">Soft power only. Skill still wins late ice.</p>
+      <div id="upgrade-list"></div>
+    </div>
+
+    <!-- Settings -->
+    <div id="screen-settings" class="screen hidden">
+      <header class="hub-top">
+        <button type="button" class="btn ghost" id="btn-set-back">← Back</button>
+        <span>Settings</span>
+      </header>
+      <label class="field">Display name
+        <input id="set-name" maxlength="16" />
+      </label>
+      <label class="field">Music <input type="range" id="set-music" min="0" max="1" step="0.05" aria-label="Music volume" /></label>
+      <label class="field">SFX <input type="range" id="set-sfx" min="0" max="1" step="0.05" aria-label="SFX volume" /></label>
+      <label class="field">Text size
+        <select id="set-textscale" aria-label="Text size">
+          <option value="1">A (default)</option>
+          <option value="1.15">A+</option>
+          <option value="1.3">A++</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="set-motion" /> Reduce motion</label>
+      <label class="check"><input type="checkbox" id="set-shake" /> Reduce shake</label>
+      <label class="check"><input type="checkbox" id="set-contrast" /> High contrast UI</label>
+      <label class="check"><input type="checkbox" id="set-sr" /> Screen reader hints</label>
+      <p class="muted tiny" id="a11y-live" aria-live="polite"></p>
+      <div class="row">
+        <button type="button" class="btn secondary" id="btn-export">Export save</button>
+        <button type="button" class="btn secondary" id="btn-import">Import save</button>
+      </div>
+      <input type="file" id="import-file" accept="application/json,.json" hidden />
+      <button type="button" class="btn danger" id="btn-reset">Reset progress…</button>
+      <p id="set-msg" class="muted tiny"></p>
+    </div>
+
+    <!-- How to -->
+    <div id="modal-howto" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card panel">
+        <h2>How to climb</h2>
+        <ul>
+          <li><strong>A / D</strong> or L / R — slide on ice</li>
+          <li><strong>Space / Jump</strong> — hold for higher</li>
+          <li><strong>Wall jump</strong> — jump while on a wall</li>
+          <li><strong>Combo</strong> — chain graded landings</li>
+          <li><strong>BAN</strong> — coins bank to soft upgrades</li>
+          <li><strong>Goal</strong> — reach the summit line</li>
+        </ul>
+        <button type="button" class="btn primary" id="btn-howto-ok">Got it</button>
+      </div>
+    </div>
+
+    <!-- Climb HUD -->
+    <div id="hud" class="hidden">
+      <div class="top">
+        <div class="panel" id="stats">⬆ 0m · ★ 0 · 🍌 0</div>
+        <button type="button" class="icon-btn" id="btn-pause" aria-label="Pause">⏸</button>
+      </div>
+      <div id="powers" class="powers"></div>
+      <div id="combo-pop"></div>
+      <div id="grade-toast"></div>
+      <div id="tip-toast" class="tip"></div>
+      <div id="debug" class="panel debug hidden"></div>
+      <div id="touch" class="touch">
+        <button type="button" id="btn-left" aria-label="Left">◀</button>
+        <button type="button" id="btn-jump" aria-label="Jump">JUMP</button>
+        <button type="button" id="btn-right" aria-label="Right">▶</button>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div id="modal-pause" class="modal hidden">
+      <div class="modal-card panel">
+        <h2>Paused</h2>
+        <p class="muted">Even MonKeys need a banana break.</p>
+        <button type="button" class="btn primary" id="btn-resume">Resume</button>
+        <button type="button" class="btn secondary" id="btn-pause-howto">How to play</button>
+        <button type="button" class="btn ghost" id="btn-pause-hub">Hub</button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="modal-results" class="modal hidden">
+      <div class="modal-card panel results">
+        <h2 id="res-title">Fall</h2>
+        <p id="res-pun" class="pun"></p>
+        <p id="res-newbest" class="pun hidden" role="status">NEW BEST</p>
+        <div class="stat-grid">
+          <div>Height <strong id="res-height">0m</strong></div>
+          <div>Style <strong id="res-style">0</strong></div>
+          <div>Combo max <strong id="res-combo">0</strong></div>
+          <div>BAN this run <strong id="res-ban">+0</strong></div>
+          <div class="wide">Grades <strong id="res-grades">—</strong></div>
+          <div class="wide muted" id="res-bank-line"></div>
+          <div class="wide muted" id="res-global" aria-live="polite"></div>
+        </div>
+        <button type="button" class="btn primary" id="btn-again">Again</button>
+        <div class="row">
+          <button type="button" class="btn secondary" id="btn-share">Share</button>
+          <button type="button" class="btn ghost" id="btn-res-hub">Hub</button>
+        </div>
+        <button type="button" class="btn secondary hidden" id="btn-res-endless">Endless</button>
+      </div>
+    </div>
+
+    <!-- Share -->
+    <div id="modal-share" class="modal hidden">
+      <div class="modal-card panel">
+        <h2>Share card</h2>
+        <canvas id="share-canvas" width="360" height="450"></canvas>
+        <button type="button" class="btn primary" id="btn-share-save">Save image</button>
+        <button type="button" class="btn secondary" id="btn-share-copy">Copy text</button>
+        <button type="button" class="btn ghost" id="btn-share-close">Close</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

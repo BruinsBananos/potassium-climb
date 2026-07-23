@@ -397,7 +397,7 @@ async function main(): Promise<void> {
       startShield: startShieldCharges(save.progress.upgrades),
     });
 
-    view.resize(world);
+    view.resize(world, feel.camera.view_zoom ?? 1.18);
     view.bakeWorld(world);
     view.camX = world.spawnX - world.designW / 2;
     view.camY = world.designH - world.spawnY - world.designH * 0.55;
@@ -597,6 +597,20 @@ async function main(): Promise<void> {
     nb.classList.toggle('hidden', !newBest || isLab);
     if (newBest && !isLab) audio.playCue('newbest');
     $('btn-res-endless').classList.toggle('hidden', !(summit && world.mode === 'world'));
+    // Next world: only after summit when a newly unlocked (or already unlocked) next biome exists
+    const nextId = summit && world.mode === 'world' ? nextUnlockAfterClear(world.biomeId) : null;
+    const nextBtn = $('btn-res-next');
+    if (nextId && isBiomeUnlocked(nextId, save.progress.worldsCleared, save.progress.worldsUnlocked)) {
+      const nextBiome = getBiome(nextId);
+      nextBtn.classList.remove('hidden');
+      nextBtn.textContent = nextBiome ? `Next: ${nextBiome.name} →` : 'Next world →';
+      nextBtn.dataset.nextBiome = nextId;
+    } else {
+      nextBtn.classList.add('hidden');
+      delete nextBtn.dataset.nextBiome;
+    }
+    // Exit label: after fall or summit without next, clear way out of the round
+    $('btn-res-exit').textContent = summit ? 'Exit to hub' : 'Exit';
     show($('modal-results'), true);
 
     if (!save.flags.firstUpgradeOffered && save.bank.ban >= 25) {
@@ -728,7 +742,23 @@ async function main(): Promise<void> {
       challenge: pendingChallenge ?? undefined,
     });
   };
+  // Exit: leave results and return to hub (pick next world / upgrades)
+  $('btn-res-exit').onclick = () => {
+    audio.playCue('ui');
+    goHub();
+  };
   $('btn-res-hub').onclick = () => goHub();
+  // Next world after summit clear
+  $('btn-res-next').onclick = () => {
+    const id = $('btn-res-next').dataset.nextBiome;
+    if (!id) {
+      goHub();
+      return;
+    }
+    audio.playCue('ui');
+    show($('modal-results'), false);
+    startClimb({ mode: 'world', biomeId: id });
+  };
   $('btn-res-endless').onclick = () => {
     show($('modal-results'), false);
     startClimb({ mode: 'endless', biomeId: world.biomeId, endless: true });
@@ -791,7 +821,7 @@ async function main(): Promise<void> {
   };
 
   window.addEventListener('resize', () => {
-    if (mode === 'climb') view.resize(world);
+    if (mode === 'climb') view.resize(world, feel.camera.view_zoom ?? 1.18);
   });
 
   app.ticker.add((ticker) => {

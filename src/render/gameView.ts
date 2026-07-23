@@ -32,6 +32,8 @@ export class GameView {
   camY = 0;
   designW = 720;
   designH = 1280;
+  /** Multiplier on fit-scale; >1 = zoomed in */
+  viewZoom = 1.18;
   private platSprites: { spr: Sprite | Graphics; id: number }[] = [];
   private wallG = new Graphics();
   private snowG = new Graphics();
@@ -71,13 +73,16 @@ export class GameView {
     app.stage.addChild(this.world);
   }
 
-  resize(world: WorldSpec): void {
+  resize(world: WorldSpec, viewZoom?: number): void {
     this.designW = world.designW;
     this.designH = world.designH;
+    if (viewZoom != null && viewZoom > 0) this.viewZoom = viewZoom;
     const w = this.app.renderer.width;
     const h = this.app.renderer.height;
-    const scale = Math.min(w / this.designW, h / this.designH);
+    const fit = Math.min(w / this.designW, h / this.designH);
+    const scale = fit * this.viewZoom;
     this.world.scale.set(scale);
+    // Center; zoom >1 crops edges slightly so playfield feels larger
     this.world.x = (w - this.designW * scale) / 2;
     this.world.y = (h - this.designH * scale) / 2;
   }

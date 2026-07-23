@@ -104,6 +104,8 @@ export type FeelParams = {
     cam_lerp_y_fall: number;
     cam_fall_vy_trigger: number;
     cam_max_speed: number;
+    /** >1 zooms world in (sprites/platforms larger on screen) */
+    view_zoom: number;
   };
 };
 
@@ -211,6 +213,8 @@ export const FEEL_DEFAULTS: FeelParams = {
     cam_lerp_y_fall: 7.0,
     cam_fall_vy_trigger: -600,
     cam_max_speed: 2200,
+    /** Slight zoom so MonKey + pads read larger */
+    view_zoom: 1.18,
   },
 };
 

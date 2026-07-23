@@ -115,6 +115,17 @@ h2 { font-size: 1.25rem; margin-bottom: 10px; }
   margin: 14px 0; font-size: 14px;
 }
 .results .stat-grid .wide { grid-column: 1 / -1; }
+.results #btn-res-exit {
+  background: #1c2640;
+  border-color: #5ec8e8;
+  color: #f4f7ff;
+  font-size: 17px;
+  padding: 15px 16px;
+}
+.results #btn-res-next {
+  background: linear-gradient(180deg, #3cb87a, #2a8a5a);
+  border-color: #6bcb3c;
+}
 .pun { color: #ffe14a; margin: 6px 0 10px; font-size: 14px; }
 #share-canvas {
   width: 100%; height: auto; border-radius: 12px;
@@ -198,13 +209,13 @@ h2 { font-size: 1.25rem; margin-bottom: 10px; }
   border: none; border-radius: 18px;
   background: rgba(28, 38, 64, 0.88);
   color: #f4f7ff;
-  font-weight: 700; font-size: 16px;
-  min-width: 72px; min-height: 64px;
+  font-weight: 700; font-size: 18px;
+  min-width: 80px; min-height: 72px;
   touch-action: none;
   border: 1px solid #2a3a5c;
 }
 #btn-jump {
-  flex: 1; max-width: 170px; min-height: 84px;
+  flex: 1; max-width: 190px; min-height: 92px;
   background: rgba(94, 200, 232, 0.32);
   border-color: #5ec8e8;
 }

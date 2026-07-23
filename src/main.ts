@@ -30,6 +30,12 @@ import {
   stepSim,
   type SimState,
 } from './core/physics/sim';
+import {
+  isJumpDebugEnabled,
+  jumpDebugDump,
+  jumpDebugExportJson,
+  setJumpDebugEnabled,
+} from './core/physics/jumpDebug';
 import { GameView } from './render/gameView';
 import {
   exportSave,
@@ -105,6 +111,17 @@ function syncCosmetics(save: SaveV3): void {
 async function main(): Promise<void> {
   assertContentValid();
   console.info('[content]', validateContent());
+
+  // Phase A: jump reliability debug (?debugJump=1 or F1 panel also enables ring logging)
+  try {
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('debugJump') === '1' || qs.get('debug') === '1') {
+      setJumpDebugEnabled(true);
+      console.info('[jumpDebug] enabled via query string — press F2 to export last 120 events');
+    }
+  } catch {
+    /* ignore */
+  }
 
   let save = loadSave();
   syncCosmetics(save);
@@ -785,6 +802,18 @@ async function main(): Promise<void> {
     if (snap.debugPressed) {
       showDebug = !showDebug;
       show($('debug'), showDebug);
+      // F1 panel on also enables jump ring so land/step rows appear
+      if (showDebug) setJumpDebugEnabled(true);
+    }
+    if (snap.jumpLogExportPressed) {
+      const json = jumpDebugExportJson();
+      console.info('[jumpDebug] export (last 120):\n' + json);
+      console.info('[jumpDebug] count', jumpDebugDump().length);
+      try {
+        void navigator.clipboard?.writeText(json);
+      } catch {
+        /* ignore */
+      }
     }
     if (snap.pausePressed && !resultsOpen) {
       paused = !paused;
@@ -869,10 +898,16 @@ async function main(): Promise<void> {
 
     if (showDebug) {
       const d = getDebug(sim, feel);
+      const lastA = jumpDebugDump().filter((e) => e.kind === 'attempt').slice(-1)[0];
       $('debug').textContent = [
         `fps ${app.ticker.FPS.toFixed(0)} ${world.biomeId}`,
         `vx ${p.vx.toFixed(0)} vy ${p.vy.toFixed(0)}`,
         `spd ${(d.speedPct * 100).toFixed(0)}% ${d.state}`,
+        `gnd ${p.onGround ? 1 : 0} coy ${(p.coyoteLeft * 1000).toFixed(0)} buf ${(p.bufferLeft * 1000).toFixed(0)}`,
+        `jumpDbg ${isJumpDebugEnabled() ? 'ON' : 'off'} F2=export`,
+        lastA
+          ? `last ${lastA.jumpSucceeded ? 'OK' : 'FAIL'}:${lastA.failReason ?? '-'} ${lastA.note ?? ''}`
+          : `last -`,
         `grade ${d.gradeLast ?? '-'}`,
         `mode ${world.mode}`,
       ].join('\n');
@@ -892,6 +927,19 @@ async function main(): Promise<void> {
     feel;
   (window as unknown as { __SAVE: SaveV3 }).__SAVE = save;
   (window as unknown as { __validate: typeof validateContent }).__validate = validateContent;
+  (
+    window as unknown as {
+      __jumpDebug: {
+        dump: typeof jumpDebugDump;
+        exportJson: typeof jumpDebugExportJson;
+        enable: typeof setJumpDebugEnabled;
+      };
+    }
+  ).__jumpDebug = {
+    dump: jumpDebugDump,
+    exportJson: jumpDebugExportJson,
+    enable: setJumpDebugEnabled,
+  };
 }
 
 main().catch((err) => {

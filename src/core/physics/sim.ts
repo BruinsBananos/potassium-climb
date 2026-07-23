@@ -1,6 +1,13 @@
 import { approach, clamp, horizontalOverlapRatio, type AABB } from '../math/aabb';
 import type { FeelParams } from '../../content/feelParams';
 import type { Pickup, Snowball, WorldSpec } from '../../worldgen/types';
+import {
+  isJumpDebugEnabled,
+  jumpDebugAttempt,
+  jumpDebugPush,
+  jumpDebugTick,
+  type JumpFailReason,
+} from './jumpDebug';
 import type {
   GradeCounts,
   LandEvent,
@@ -270,12 +277,67 @@ function applyGradeGameplay(
   }
 }
 
-function tryJump(sim: SimState, feel: FeelParams, fromWall: boolean): boolean {
+function playerState(sim: SimState): string {
+  const p = sim.player;
+  if (sim.dead) return 'dead';
+  if (sim.summit) return 'summit';
+  if (p.onWall) return 'wall';
+  if (p.onGround) return 'ground';
+  return 'air';
+}
+
+/** If feet rest on a pad and not rising, force grounded truth before jump attempts (H2). */
+function syncGroundedFromFeet(sim: SimState, feel: FeelParams): void {
+  const p = sim.player;
+  if (p.vy > 0) return; // rising — do not snap
+  const feet = feetBox(p, feel);
+  const plat = findLandPlatform(sim, feel, p.y + 2, feet);
+  if (!plat) return;
+  const top = plat.y + plat.h;
+  if (Math.abs(p.y - top) > feel.body.land_y_slop + 2) return;
+  p.y = top;
+  p.vy = 0;
+  p.onGround = true;
+  p.surface = plat.kind as Surface;
+  p.platformId = plat.id;
+  p.onWall = false;
+}
+
+/**
+ * Single jump authority. Returns whether jump started.
+ */
+function tryJump(
+  sim: SimState,
+  feel: FeelParams,
+  fromWall: boolean,
+  input: InputFrame,
+): boolean {
   const p = sim.player;
   const J = feel.jump;
-  const maxRun = feel.horizontal.max_run_speed * (p.speedLeft > 0 ? 1.35 : 1);
+
+  const log = (succeeded: boolean, failReason: JumpFailReason, note?: string): boolean => {
+    jumpDebugAttempt({
+      onGround: p.onGround,
+      coyoteMs: p.coyoteLeft * 1000,
+      bufferMs: p.bufferLeft * 1000,
+      jumpDown: input.jumpDown,
+      jumpHeld: input.jumpHeld,
+      vy: p.vy,
+      state: playerState(sim),
+      succeeded,
+      failReason,
+      note,
+    });
+    return succeeded;
+  };
+
+  if (sim.dead) return log(false, 'dead');
+  if (sim.summit) return log(false, 'summit');
 
   if (fromWall) {
+    const wallOk =
+      (p.onWall && p.clingLeft > 0) || (!p.onWall && p.wallGraceLeft > 0 && p.wallDir !== 0);
+    if (!wallOk) return log(false, 'wall_invalid');
     const dir = -p.wallDir || -p.facing;
     p.vx = dir * feel.wall.wall_jump_vx;
     let vy = feel.wall.wall_jump_vy;
@@ -299,13 +361,25 @@ function tryJump(sim: SimState, feel: FeelParams, fromWall: boolean): boolean {
     p.facing = dir;
     sim.comboTimer = Math.max(sim.comboTimer, feel.wall.wall_combo_refresh_ms / 1000);
     sim.style += feel.wall.wall_style * sim.styleMult;
-    sim.hitstopFrames = Math.max(sim.hitstopFrames, 2);
+    sim.hitstopFrames = 0;
     sim.wallJumps += 1;
     queueSfx(sim, 'wall');
-    return true;
+    return log(true, 'none', 'wall');
   }
 
-  if (!(p.onGround || p.coyoteLeft > 0)) return false;
+  // Already rising from a jump this contact — not a miss, just no double-jump
+  if (!p.onGround && p.coyoteLeft <= 0 && p.vy > 50 && p.jumpHoldActive) {
+    return log(false, 'already_airborne');
+  }
+
+  if (!p.onGround && p.coyoteLeft <= 0) {
+    return log(false, p.coyoteLeft <= 0 && !p.onGround ? 'not_grounded' : 'no_coyote');
+  }
+  if (!p.onGround && p.coyoteLeft > 0) {
+    // coyote ok
+  } else if (!p.onGround) {
+    return log(false, 'no_coyote');
+  }
 
   const carry = clamp(Math.abs(p.vx) / feel.horizontal.max_run_speed, 0, 1.25);
   let vy =
@@ -323,7 +397,7 @@ function tryJump(sim: SimState, feel: FeelParams, fromWall: boolean): boolean {
   p.jumpHoldActive = true;
   p.jumpHoldTime = 0;
   queueSfx(sim, 'jump');
-  return true;
+  return log(true, 'none', 'ground');
 }
 
 function findLandPlatform(
@@ -504,11 +578,27 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
   const H = feel.horizontal;
   const J = feel.jump;
 
+  jumpDebugTick();
+
   // Always accept jump presses (even during hitstop) so taps are never dropped
   if (input.jumpDown) p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
 
   if (sim.hitstopFrames > 0) {
     sim.hitstopFrames -= 1;
+    // Buffer stays armed; do not attempt while frozen (H3)
+    if (isJumpDebugEnabled()) {
+      jumpDebugPush({
+        kind: 'step',
+        onGround: p.onGround,
+        coyoteMs: p.coyoteLeft * 1000,
+        bufferMs: p.bufferLeft * 1000,
+        jumpDown: input.jumpDown,
+        jumpHeld: input.jumpHeld,
+        vy: p.vy,
+        state: playerState(sim),
+        note: 'hitstop',
+      });
+    }
     return;
   }
 
@@ -529,13 +619,16 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     if (sim.comboTimer <= 0) sim.combo = 0;
   }
 
+  // H2: if feet rest on pad and not rising, force grounded truth before jump attempts
+  syncGroundedFromFeet(sim, feel);
+
   // Jump EARLY while grounded/coyote/wall — before movement so platform presses feel instant.
-  // (Previously ground jumps only ran after land, so coyote + many grounded presses lagged.)
+  // Order (E.3): arm buffer → attempt → move → land → attempt again → tick buffer
   const wallJumpValid =
     (p.onWall && p.clingLeft > 0) || (!p.onWall && p.wallGraceLeft > 0 && p.wallDir !== 0);
   if (p.bufferLeft > 0 || input.jumpDown) {
-    if (wallJumpValid) tryJump(sim, feel, true);
-    else if (p.onGround || p.coyoteLeft > 0) tryJump(sim, feel, false);
+    if (wallJumpValid) tryJump(sim, feel, true, input);
+    else if (p.onGround || p.coyoteLeft > 0) tryJump(sim, feel, false, input);
   }
 
   const wish = wishX(input);
@@ -670,16 +763,43 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     }
   }
 
-  // Same-frame re-jump after landing (bunny-hop / buffered land)
+  // Same-frame re-jump after landing (bunny-hop / buffered land / hold-through land C5)
   if (p.onGround && (p.bufferLeft > 0 || input.jumpDown || (justLanded && input.jumpHeld))) {
     if (justLanded && input.jumpHeld) {
       p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
     }
-    tryJump(sim, feel, false);
+    tryJump(sim, feel, false, input);
   }
 
-  // Tick jump buffer after attempts so a press the same frame always gets a try
+  // H5: Tick jump buffer AFTER all attempts so a press the same frame always gets a try
   if (p.bufferLeft > 0) p.bufferLeft = Math.max(0, p.bufferLeft - dt);
+
+  if (isJumpDebugEnabled()) {
+    jumpDebugPush({
+      kind: 'step',
+      onGround: p.onGround,
+      coyoteMs: p.coyoteLeft * 1000,
+      bufferMs: p.bufferLeft * 1000,
+      jumpDown: input.jumpDown,
+      jumpHeld: input.jumpHeld,
+      vy: p.vy,
+      state: playerState(sim),
+      note: justLanded ? 'justLanded' : undefined,
+    });
+  }
+
+  if (justLanded && isJumpDebugEnabled()) {
+    jumpDebugPush({
+      kind: 'land',
+      onGround: p.onGround,
+      coyoteMs: p.coyoteLeft * 1000,
+      bufferMs: p.bufferLeft * 1000,
+      jumpDown: input.jumpDown,
+      jumpHeld: input.jumpHeld,
+      vy: p.vy,
+      state: playerState(sim),
+    });
+  }
 
   // movers + crumble
   for (const plat of sim.platforms) {

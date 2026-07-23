@@ -1,3 +1,5 @@
+import { jumpDebugInputEdge } from '../core/physics/jumpDebug';
+
 export interface InputState {
   left: boolean;
   right: boolean;
@@ -7,6 +9,8 @@ export interface InputState {
   pausePressed: boolean;
   resetPressed: boolean;
   debugPressed: boolean;
+  /** F2: dump jump debug JSON */
+  jumpLogExportPressed: boolean;
 }
 
 export function createInput(): {
@@ -28,6 +32,7 @@ export function createInput(): {
     pause: false,
     reset: false,
     debug: false,
+    jumpLogExport: false,
   };
 
   const state: InputState = {
@@ -38,11 +43,13 @@ export function createInput(): {
     pausePressed: false,
     resetPressed: false,
     debugPressed: false,
+    jumpLogExportPressed: false,
   };
 
-  const queueJump = (): void => {
+  const queueJump = (source: string): void => {
     jumpQueued = true;
     held.jump = true;
+    jumpDebugInputEdge(source, performance.now());
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -60,7 +67,7 @@ export function createInput(): {
       case 'KeyW':
       case 'ArrowUp':
         e.preventDefault();
-        queueJump();
+        queueJump(`keydown:${e.code}`);
         break;
       case 'KeyP':
       case 'Escape':
@@ -72,6 +79,10 @@ export function createInput(): {
       case 'F1':
         e.preventDefault();
         edges.debug = true;
+        break;
+      case 'F2':
+        e.preventDefault();
+        edges.jumpLogExport = true;
         break;
     }
   };
@@ -105,7 +116,7 @@ export function createInput(): {
       }
       if (which === 'left') held.left = true;
       if (which === 'right') held.right = true;
-      if (which === 'jump') queueJump();
+      if (which === 'jump') queueJump('pointerdown:jump');
     };
     const up = (ev: PointerEvent) => {
       ev.preventDefault();
@@ -151,9 +162,11 @@ export function createInput(): {
     state.pausePressed = edges.pause;
     state.resetPressed = edges.reset;
     state.debugPressed = edges.debug;
+    state.jumpLogExportPressed = edges.jumpLogExport;
     edges.pause = false;
     edges.reset = false;
     edges.debug = false;
+    edges.jumpLogExport = false;
     return state;
   };
 

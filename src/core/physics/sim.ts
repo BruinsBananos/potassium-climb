@@ -504,7 +504,7 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
   const H = feel.horizontal;
   const J = feel.jump;
 
-  // Always accept jump presses during hitstop so taps are never eaten by freeze frames
+  // Always accept jump presses (even during hitstop) so taps are never dropped
   if (input.jumpDown) p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
 
   if (sim.hitstopFrames > 0) {
@@ -522,7 +522,6 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
   if (p.speedLeft > 0) p.speedLeft -= dt;
 
   if (!p.onGround && p.coyoteLeft > 0) p.coyoteLeft -= dt;
-  if (p.bufferLeft > 0) p.bufferLeft -= dt;
   if (p.regrabLockLeft > 0) p.regrabLockLeft -= dt;
   if (p.wallGraceLeft > 0) p.wallGraceLeft -= dt;
   if (sim.comboTimer > 0) {
@@ -530,12 +529,13 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     if (sim.comboTimer <= 0) sim.combo = 0;
   }
 
-  // Wall jump only here (before integrate). Ground jumps run AFTER land so you can
-  // re-jump the same frame you touch a pad (unlimited bounce as soon as you land).
+  // Jump EARLY while grounded/coyote/wall — before movement so platform presses feel instant.
+  // (Previously ground jumps only ran after land, so coyote + many grounded presses lagged.)
   const wallJumpValid =
     (p.onWall && p.clingLeft > 0) || (!p.onWall && p.wallGraceLeft > 0 && p.wallDir !== 0);
-  if (p.bufferLeft > 0 && wallJumpValid) {
-    tryJump(sim, feel, true);
+  if (p.bufferLeft > 0 || input.jumpDown) {
+    if (wallJumpValid) tryJump(sim, feel, true);
+    else if (p.onGround || p.coyoteLeft > 0) tryJump(sim, feel, false);
   }
 
   const wish = wishX(input);
@@ -670,13 +670,16 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     }
   }
 
-  // Ground jump after landing: buffer, fresh press, or hold-through for instant re-jump
+  // Same-frame re-jump after landing (bunny-hop / buffered land)
   if (p.onGround && (p.bufferLeft > 0 || input.jumpDown || (justLanded && input.jumpHeld))) {
     if (justLanded && input.jumpHeld) {
       p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
     }
     tryJump(sim, feel, false);
   }
+
+  // Tick jump buffer after attempts so a press the same frame always gets a try
+  if (p.bufferLeft > 0) p.bufferLeft = Math.max(0, p.bufferLeft - dt);
 
   // movers + crumble
   for (const plat of sim.platforms) {

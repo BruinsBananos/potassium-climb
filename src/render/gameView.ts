@@ -293,16 +293,21 @@ export class GameView {
       this.summitLabel.scale.set(1);
     }
 
-    // parallax + camera
-    let targetCamX = x - this.designW / 2 + Math.sign(p.vx) * Math.min(Math.abs(p.vx) / feel.horizontal.max_run_speed, 1) * 36;
-    let targetCamY = screenY - this.designH * 0.55;
+    // Camera: keep player low on screen so more of the climb is visible above
+    const screenFrac = feel.camera.player_screen_y ?? 0.78;
+    let targetCamX =
+      x - this.designW / 2 + Math.sign(p.vx) * Math.min(Math.abs(p.vx) / feel.horizontal.max_run_speed, 1) * 28;
+    let targetCamY = screenY - this.designH * screenFrac;
     if (sim.summit) {
-      targetCamY = this.flipY(sim.summitY) - this.designH * 0.45;
-      targetCamX = this.designW / 2 - this.designW / 2;
+      targetCamY = this.flipY(sim.summitY) - this.designH * 0.55;
+      targetCamX = 0;
     }
     const dt = 1 / 60;
-    const lx = this.reduceMotion ? 12 : feel.camera.cam_lerp_x;
-    const ly = sim.summit ? 3 : this.reduceMotion ? 12 : feel.camera.cam_lerp_y_rise;
+    const lx = this.reduceMotion ? 14 : feel.camera.cam_lerp_x;
+    // Snappier vertical follow so look-ahead feels immediate, not laggy
+    let ly = sim.summit ? 3 : this.reduceMotion ? 14 : feel.camera.cam_lerp_y_rise;
+    if (p.vy > 80) ly = Math.max(ly, feel.camera.cam_lerp_y_rise * 1.35);
+    if (p.vy < -200) ly = feel.camera.cam_lerp_y_fall;
     this.camX += (targetCamX - this.camX) * (1 - Math.exp(-lx * dt));
     this.camY += (targetCamY - this.camY) * (1 - Math.exp(-ly * dt));
 

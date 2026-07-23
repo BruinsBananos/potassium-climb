@@ -801,7 +801,7 @@ async function main(): Promise<void> {
     if (!paused && !sim.dead && !sim.summit) {
       accum += frameDt;
       let steps = 0;
-      // Keep jump latched across all substeps so multi-step frames never drop a tap
+      // Keep jump latched across all substeps; sim arms a 200ms buffer so late frames still jump
       const wantJump = snap.jumpPressed;
       while (accum >= FIXED_DT && steps < feel.world.max_physics_steps_per_frame) {
         prevX = sim.player.x;

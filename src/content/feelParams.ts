@@ -98,6 +98,7 @@ export type FeelParams = {
     look_ahead_x: number;
     look_ahead_y_up: number;
     look_ahead_y_down: number;
+    player_screen_y: number;
     cam_lerp_x: number;
     cam_lerp_y_rise: number;
     cam_lerp_y_fall: number;
@@ -203,9 +204,11 @@ export const FEEL_DEFAULTS: FeelParams = {
     look_ahead_x: 36,
     look_ahead_y_up: 64,
     look_ahead_y_down: 24,
-    cam_lerp_x: 6.0,
-    cam_lerp_y_rise: 8.0,
-    cam_lerp_y_fall: 5.0,
+    /** Player screen Y fraction from top (higher = lower on screen = more sky above) */
+    player_screen_y: 0.78,
+    cam_lerp_x: 8.0,
+    cam_lerp_y_rise: 10.0,
+    cam_lerp_y_fall: 7.0,
     cam_fall_vy_trigger: -600,
     cam_max_speed: 2200,
   },

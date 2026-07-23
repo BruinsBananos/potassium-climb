@@ -801,6 +801,8 @@ async function main(): Promise<void> {
     if (!paused && !sim.dead && !sim.summit) {
       accum += frameDt;
       let steps = 0;
+      // Keep jump latched across all substeps so multi-step frames never drop a tap
+      const wantJump = snap.jumpPressed;
       while (accum >= FIXED_DT && steps < feel.world.max_physics_steps_per_frame) {
         prevX = sim.player.x;
         prevY = sim.player.y;
@@ -810,16 +812,20 @@ async function main(): Promise<void> {
           {
             left: snap.left,
             right: snap.right,
-            jumpDown: snap.jumpPressed && steps === 0,
-            jumpHeld: snap.jumpHeld,
+            jumpDown: wantJump,
+            jumpHeld: snap.jumpHeld || wantJump,
           },
           FIXED_DT,
         );
         accum -= FIXED_DT;
         steps += 1;
       }
+      if (wantJump) input.consumeJump();
       if (steps === feel.world.max_physics_steps_per_frame) accum = 0;
-    } else accum = 0;
+    } else {
+      // Still queue jumps while paused? No — but don't lose edge across pause: keep latch
+      accum = 0;
+    }
 
     for (const id of drainSfx(sim)) audio.playCue(id);
 

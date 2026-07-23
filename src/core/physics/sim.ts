@@ -221,7 +221,7 @@ function applyGradeGameplay(
       style = L.style_perfect;
       vxMul = L.land_vx_mul_perfect;
       ban = L.ban_crumb_perfect;
-      hitstop = 1; // was 2 — keep juice without blocking instant re-jump
+      hitstop = 0; // never freeze inputs on land — juice is visual/audio only
       queueSfx(sim, 'land_perfect');
       break;
     case 'great':
@@ -499,14 +499,19 @@ function hazardCheck(sim: SimState, feel: FeelParams): void {
 
 export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: number): void {
   if (sim.dead || sim.summit) return;
+
+  const p = sim.player;
+  const H = feel.horizontal;
+  const J = feel.jump;
+
+  // Always accept jump presses during hitstop so taps are never eaten by freeze frames
+  if (input.jumpDown) p.bufferLeft = Math.max(p.bufferLeft, J.jump_buffer_ms / 1000);
+
   if (sim.hitstopFrames > 0) {
     sim.hitstopFrames -= 1;
     return;
   }
 
-  const p = sim.player;
-  const H = feel.horizontal;
-  const J = feel.jump;
   const speedMul = p.speedLeft > 0 ? 1.35 : 1;
   const maxRun = H.max_run_speed * speedMul;
 
@@ -524,8 +529,6 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
     sim.comboTimer -= dt;
     if (sim.comboTimer <= 0) sim.combo = 0;
   }
-
-  if (input.jumpDown) p.bufferLeft = J.jump_buffer_ms / 1000;
 
   // Wall jump only here (before integrate). Ground jumps run AFTER land so you can
   // re-jump the same frame you touch a pad (unlimited bounce as soon as you land).
@@ -641,23 +644,22 @@ export function stepSim(sim: SimState, feel: FeelParams, input: InputFrame, dt: 
         sim.lastLand = { grade, impact: impactVy, edge, surface };
         sim.landFlash = true;
         applyGradeGameplay(sim, feel, grade, surface);
-        // Keep land hitstop tiny so re-jump never feels gated
-        if (sim.hitstopFrames > 1) sim.hitstopFrames = 1;
+        sim.hitstopFrames = 0;
         if (plat.kind === 'crumble' && plat.crumbleArmedAt == null) {
           plat.crumbleArmedAt = sim.elapsed;
           queueSfx(sim, 'land_scuff');
         }
         if (plat.kind === 'spring') {
-          p.vy = feel.spring.spring_vy * 0.92; // slightly softer spring to match floaty gravity
+          p.vy = feel.spring.spring_vy * 0.92;
           p.vx *= feel.spring.spring_vx_keep;
           p.onGround = false;
           p.surface = null;
           p.platformId = null;
           p.jumpHoldActive = feel.spring.spring_allow_hold;
           p.jumpHoldTime = 0;
-          sim.hitstopFrames = Math.max(sim.hitstopFrames, 1);
+          sim.hitstopFrames = 0;
           queueSfx(sim, 'spring');
-          justLanded = false; // spring already launches
+          justLanded = false;
         }
       }
     } else if (wasGrounded) {

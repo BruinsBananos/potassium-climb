@@ -2,6 +2,7 @@ export interface InputState {
   left: boolean;
   right: boolean;
   jumpHeld: boolean;
+  /** Latched jump press — stays true until consumeJump() */
   jumpPressed: boolean;
   pausePressed: boolean;
   resetPressed: boolean;
@@ -11,6 +12,8 @@ export interface InputState {
 export function createInput(): {
   state: InputState;
   sample: () => InputState;
+  /** Clear latched jump after physics has seen it this frame */
+  consumeJump: () => void;
   attach: () => void;
   detach: () => void;
 } {
@@ -19,8 +22,9 @@ export function createInput(): {
     right: false,
     jump: false,
   };
+  /** Sticky jump edge — not cleared by sample(), only consumeJump() */
+  let jumpQueued = false;
   const edges = {
-    jump: false,
     pause: false,
     reset: false,
     debug: false,
@@ -34,6 +38,11 @@ export function createInput(): {
     pausePressed: false,
     resetPressed: false,
     debugPressed: false,
+  };
+
+  const queueJump = (): void => {
+    jumpQueued = true;
+    held.jump = true;
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -51,8 +60,7 @@ export function createInput(): {
       case 'KeyW':
       case 'ArrowUp':
         e.preventDefault();
-        held.jump = true;
-        edges.jump = true;
+        queueJump();
         break;
       case 'KeyP':
       case 'Escape':
@@ -88,35 +96,42 @@ export function createInput(): {
 
   const bindTouch = (el: HTMLElement | null, which: 'left' | 'right' | 'jump') => {
     if (!el) return;
-    const down = (ev: Event) => {
+    const down = (ev: PointerEvent) => {
       ev.preventDefault();
+      try {
+        el.setPointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
       if (which === 'left') held.left = true;
       if (which === 'right') held.right = true;
-      if (which === 'jump') {
-        held.jump = true;
-        edges.jump = true;
-      }
+      if (which === 'jump') queueJump();
     };
-    const up = (ev: Event) => {
+    const up = (ev: PointerEvent) => {
       ev.preventDefault();
+      try {
+        if (el.hasPointerCapture(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
       if (which === 'left') held.left = false;
       if (which === 'right') held.right = false;
       if (which === 'jump') held.jump = false;
     };
+    // Don't clear jump on pointerleave while captured — only pointerup/cancel
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointerup', up);
-    el.addEventListener('pointerleave', up);
     el.addEventListener('pointercancel', up);
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
   };
 
   const attach = () => {
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, { passive: false });
     window.addEventListener('keyup', onKeyUp);
     bindTouch(document.getElementById('btn-left'), 'left');
     bindTouch(document.getElementById('btn-right'), 'right');
     bindTouch(document.getElementById('btn-jump'), 'jump');
 
-    // show touch on coarse pointers
     const touch = document.getElementById('touch');
     if (touch && (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window)) {
       touch.classList.add('show');
@@ -132,16 +147,19 @@ export function createInput(): {
     state.left = held.left;
     state.right = held.right;
     state.jumpHeld = held.jump;
-    state.jumpPressed = edges.jump;
+    state.jumpPressed = jumpQueued;
     state.pausePressed = edges.pause;
     state.resetPressed = edges.reset;
     state.debugPressed = edges.debug;
-    edges.jump = false;
     edges.pause = false;
     edges.reset = false;
     edges.debug = false;
     return state;
   };
 
-  return { state, sample, attach, detach };
+  const consumeJump = (): void => {
+    jumpQueued = false;
+  };
+
+  return { state, sample, consumeJump, attach, detach };
 }

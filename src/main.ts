@@ -603,7 +603,7 @@ async function main(): Promise<void> {
     if (nextId && isBiomeUnlocked(nextId, save.progress.worldsCleared, save.progress.worldsUnlocked)) {
       const nextBiome = getBiome(nextId);
       nextBtn.classList.remove('hidden');
-      nextBtn.textContent = nextBiome ? `Next: ${nextBiome.name} →` : 'Next world →';
+      nextBtn.textContent = nextBiome ? `Next: ${nextBiome.name}` : 'Next world';
       nextBtn.dataset.nextBiome = nextId;
     } else {
       nextBtn.classList.add('hidden');
